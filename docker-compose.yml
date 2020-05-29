@@ -1,0 +1,88 @@
+version: '3'
+    
+services:
+  project-db:
+    image: postgres
+    container_name: project-db
+    environment:
+      - POSTGRES_DB=project
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=abc123
+    networks:
+      - projectnetwork
+    ports:
+      - "6433:5432"
+
+  project-admin:
+    container_name: project-admin
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    env_file:
+      - local.env
+    volumes: 
+      - .:/code
+    ports:
+      - "8002:8000"
+    depends_on:
+      - project-db
+    networks:
+      - projectnetwork
+
+  project-celery:
+    container_name: project-celery
+    restart: unless-stopped
+    command: celery worker -A project --loglevel=INFO -Q categorias --concurrency=1 -n worker@task01 --uid=nobody --gid=nogroup
+    env_file:
+      - local.env
+    volumes:
+      - .:/code
+    build: .
+    networks:
+      - projectnetwork
+    depends_on:
+      - project-redis00
+      - project-db
+      - project-rabbit
+
+  proyect-celerybeat:
+    container_name: project-celerybeat
+    restart: unless-stopped
+    command: celery -A project beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler 
+    env_file:
+      - local.env
+    volumes:
+      - .:/code
+    build: .
+    networks:
+      - projectnetwork
+    depends_on:
+      - project-redis00
+      - project-db
+      - project-rabbit
+
+  project-rabbit:
+    container_name: project-rabbit
+    image: rabbitmq:3-alpine
+    restart: unless-stopped
+    ports:
+      - "5676:5672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=project
+      - RABBITMQ_DEFAULT_PASS=project
+      - RABBITMQ_DEFAULT_VHOST=/
+    networks:
+      - projectnetwork
+
+  project-redis00:
+    image: "redis:5.0"
+    container_name: project-redis00
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+    ports:
+      - "6380:6379"
+    networks:
+      - projectnetwork
+
+networks:
+  projectnetwork:
+    driver: bridge
